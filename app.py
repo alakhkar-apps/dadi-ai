@@ -46,6 +46,7 @@ if not current_user_id:
 api_key = st.secrets.get("GEMINI_API_KEY")
 supa_url = st.secrets.get("SUPABASE_URL")
 supa_key = st.secrets.get("SUPABASE_KEY")
+rag_api_key = st.secrets.get("RAG_API_KEY")
 
 if not all([api_key, supa_url, supa_key]):
     st.error("Arre beta! Check your secrets.toml. Something is missing.")
@@ -63,7 +64,7 @@ supabase: Client = create_client(supa_url, supa_key)
 # --- 4. Initialize RAG Brain (ChromaDB) ---
 @st.cache_resource
 def init_dadi_brain():
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=rag_api_key)
     db_path = "./chroma_db"
     
     # If the database doesn't exist yet, build it!

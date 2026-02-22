@@ -6,7 +6,7 @@ from datetime import datetime
 from supabase import create_client, Client
 from streamlit_cookies_controller import CookieController
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain.chains.combine_documents import create_stuff_documents_chain

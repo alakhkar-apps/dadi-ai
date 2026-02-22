@@ -2,12 +2,11 @@ streamlit
 google-generativeai
 supabase
 streamlit-cookies-controller
-langchain
-langchain-community
+langchain==0.2.0
+langchain-community==0.2.0
+langchain-core==0.2.0
 langchain-google-genai
 langchain-chroma
 langchain-text-splitters
 pypdf
 chromadb
-langchain>=0.1.0
-langchain-core

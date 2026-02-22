@@ -2,3 +2,9 @@ streamlit
 google-generativeai
 supabase
 streamlit-cookies-controller
+langchain
+langchain-community
+langchain-google-genai
+langchain-chroma
+pypdf
+chromadb

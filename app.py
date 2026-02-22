@@ -5,6 +5,13 @@ import uuid
 from datetime import datetime
 from supabase import create_client, Client
 from streamlit_cookies_controller import CookieController
+from langchain_community.document_loaders import PyPDFLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.chains import create_retrieval_chain
+from langchain_core.prompts import ChatPromptTemplate
 
 # --- 1. Page Configuration ---
 st.set_page_config(page_title="Dadi AI", page_icon="👵🏾", layout="centered")
@@ -53,7 +60,43 @@ Use common Hindi slang naturally (like beta, arre, nalayak, shabash, hai ram) bu
 model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=DADI_PROMPT)
 supabase: Client = create_client(supa_url, supa_key)
 
-# --- 4. Database Sync (Now with user_id!) ---
+# --- 4. Initialize RAG Brain (ChromaDB) ---
+@st.cache_resource
+def init_dadi_brain():
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+    db_path = "./chroma_db"
+    
+    # If the database doesn't exist yet, build it!
+    if not os.path.exists(db_path):
+        if os.path.exists("dadi_knowledge.pdf"):
+            st.toast("📚 Dadi is reading her ancient texts...")
+            loader = PyPDFLoader("dadi_knowledge.pdf")
+            docs = loader.load()
+            text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            chunks = text_splitter.split_documents(docs)
+            vector_store = Chroma.from_documents(chunks, embeddings, persist_directory=db_path)
+        else:
+            return None # Fallback if you haven't added the PDF yet
+    else:
+        # Just load the existing database to save time
+        vector_store = Chroma(persist_directory=db_path, embedding_function=embeddings)
+        
+    return vector_store.as_retriever(search_kwargs={"k": 3})
+
+retriever = init_dadi_brain()
+
+# Setup Langchain LLM with Dadi's Persona
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
+prompt = ChatPromptTemplate.from_messages([
+    ("system", DADI_PROMPT + "\n\nUse this ancient knowledge to answer the user (if relevant):\n{context}"),
+    ("human", "{input}"),
+])
+question_answer_chain = create_stuff_documents_chain(llm, prompt)
+
+# Create the final chain if the retriever successfully loaded
+rag_chain = create_retrieval_chain(retriever, question_answer_chain) if retriever else None
+
+# --- 5. Database Sync (Now with user_id!) ---
 def fetch_chats_from_db(user_id):
     """Pulls ONLY this specific user's conversations from PostgreSQL."""
     try:
@@ -83,7 +126,7 @@ def save_chat_to_db(session_id, user_id, chat_data):
     }
     supabase.table("dadi_chats").upsert(data_to_insert).execute()
 
-# --- 5. Initialize State ---
+# --- 6. Initialize State ---
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = fetch_chats_from_db(current_user_id)
 
@@ -99,7 +142,7 @@ if not st.session_state.chat_history:
 elif "current_session_id" not in st.session_state:
     st.session_state.current_session_id = list(st.session_state.chat_history.keys())[0]
 
-# --- 6. Sidebar Navigation ---
+# --- 7. Sidebar Navigation ---
 with st.sidebar:
     st.title("🕰️ Dadi's Memory")
     st.caption(f"ID: {current_user_id[:8]}...") # Small visual indicator of their ID
@@ -123,7 +166,7 @@ with st.sidebar:
             st.session_state.current_session_id = session_id
             st.rerun()
 
-# --- 7. Active Chat Logic ---
+# --- 8. Active Chat Logic ---
 current_chat = st.session_state.chat_history[st.session_state.current_session_id]
 
 formatted_history = [{"role": msg["role"], "parts": [msg["parts"][0]]} for msg in current_chat["gemini_history"]] if current_chat["gemini_history"] else []
@@ -144,15 +187,25 @@ if user_input := st.chat_input("Tell Dadi your problems..."):
         message_placeholder.markdown("*(Dadi is adjusting her glasses and typing...)*")
         
         try:
-            response = chat_session.send_message(user_input)
-            message_placeholder.markdown(response.text)
+            # If RAG is successfully loaded, use LangChain!
+            if rag_chain:
+                response = rag_chain.invoke({"input": user_input})
+                reply_text = response["answer"]
+            else:
+                # Fallback to standard Gemini if no PDF is found
+                response = chat_session.send_message(user_input)
+                reply_text = response.text
+                
+            message_placeholder.markdown(reply_text)
             
-            current_chat["messages"].append({"role": "assistant", "content": response.text})
+            # Save Dadi's response to UI state
+            current_chat["messages"].append({"role": "assistant", "content": reply_text})
             
+            # Extract raw history to save cleanly as JSON in Supabase
             clean_history = [{"role": m.role, "parts": [p.text for p in m.parts]} for m in chat_session.history]
             current_chat["gemini_history"] = clean_history
             
-            # Save using the user's specific ID
+            # Push updates to PostgreSQL
             save_chat_to_db(st.session_state.current_session_id, current_user_id, current_chat)
             
         except Exception as e:

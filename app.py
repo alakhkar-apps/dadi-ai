@@ -86,7 +86,7 @@ def init_dadi_brain():
 retriever = init_dadi_brain()
 
 # Setup Langchain LLM with Dadi's Persona
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.7)
+llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.7)
 prompt = ChatPromptTemplate.from_messages([
     ("system", DADI_PROMPT + "\n\nUse this ancient knowledge to answer the user (if relevant):\n{context}"),
     ("human", "{input}"),
